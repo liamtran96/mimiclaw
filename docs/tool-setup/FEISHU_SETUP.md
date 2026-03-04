@@ -63,3 +63,129 @@ To add permissions:
 4. The permissions will take effect after you publish or update the app version
 
 > **Note:** On Lark (international version), the permission names may differ slightly, but the scope IDs are the same.
+
+## Step 3: Set Up Event Subscription
+
+Event subscription allows Feishu to push new messages to your ESP32 in real-time.
+
+### Configure the Webhook URL
+
+1. In your app settings, go to **Event Subscriptions** (or "Events & Callbacks")
+2. Set the **Request URL** to:
+
+```
+http://<ESP32_IP>:18790/feishu/events
+```
+
+Replace `<ESP32_IP>` with your ESP32's public IP or domain name.
+
+3. Click **Save** — Feishu will send a verification challenge to the URL
+4. MimiClaw automatically responds to the URL verification challenge, so this should succeed if the ESP32 is reachable
+
+### Subscribe to Events
+
+Add the following event:
+
+| Event | Event ID | Description |
+|-------|----------|-------------|
+| Receive messages | `im.message.receive_v1` | Triggered when users send messages to the bot |
+
+To add events:
+
+1. In the **Event Subscriptions** page, click **Add Event**
+2. Search for `im.message.receive_v1`
+3. Select it and click **Confirm**
+
+### Encryption Settings (Optional)
+
+In the event subscription settings, you can optionally configure:
+
+- **Verification Token** — used to verify that events come from Feishu
+- **Encrypt Key** — encrypts event payloads
+
+MimiClaw currently does not verify these tokens, so you can leave them empty for simplicity. For production use, consider implementing verification.
+
+## Step 4: Configure MimiClaw
+
+You need to provide the **App ID** and **App Secret** to MimiClaw.
+
+### Option 1: Build-time Configuration
+
+1. Copy the secrets template if you haven't already:
+
+```bash
+cp main/mimi_secrets.h.example main/mimi_secrets.h
+```
+
+2. Edit `main/mimi_secrets.h`:
+
+```c
+#define MIMI_SECRET_FEISHU_APP_ID     "cli_xxxxxxxxxxxxxx"
+#define MIMI_SECRET_FEISHU_APP_SECRET "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+```
+
+3. Rebuild and flash:
+
+```bash
+idf.py fullclean && idf.py build
+idf.py -p PORT flash monitor
+```
+
+### Option 2: Runtime Configuration via Serial CLI
+
+Connect to the UART (COM) port and run:
+
+```
+mimi> set_feishu_creds cli_xxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+This saves credentials to NVS flash immediately — no rebuild needed.
+
+### Verify Configuration
+
+```
+mimi> config_show
+```
+
+You should see `feishu_app_id: cli_****` and `feishu_app_secret: ****` in the output.
+
+## Step 5: Network Setup
+
+Feishu's servers need to reach your ESP32's webhook endpoint. There are several approaches:
+
+### Option A: Direct Public IP
+
+If your ESP32 is directly accessible from the internet:
+
+```
+Webhook URL: http://<PUBLIC_IP>:18790/feishu/events
+```
+
+### Option B: Port Forwarding
+
+If the ESP32 is behind a router:
+
+1. Log into your router's admin panel
+2. Forward external port (e.g., 18790) to `<ESP32_LOCAL_IP>:18790`
+3. Use your router's public IP in the webhook URL
+
+### Option C: Reverse Proxy / Tunnel
+
+For development or when port forwarding isn't possible:
+
+- **ngrok**: `ngrok http <ESP32_IP>:18790`
+- **frp**: Configure `frpc.toml` to proxy to the ESP32
+- **Cloudflare Tunnel**: Route traffic through Cloudflare
+
+Example with ngrok:
+
+```bash
+ngrok http 192.168.1.100:18790
+# Use the generated URL: https://xxxx.ngrok.io/feishu/events
+```
+
+### Option D: Cloud Server Relay (Production)
+
+For reliable production setups, deploy a lightweight reverse proxy on a cloud server (e.g., Volcengine ECS, AWS EC2) that forwards requests to your ESP32 via a VPN or WireGuard tunnel. This is the approach described in the [Volcengine OpenClaw deployment guide](https://www.volcengine.com/docs/6396/2189942).
+
+> **Note:** Feishu requires the webhook URL to be accessible and respond within 3 seconds. Ensure your network path has low latency.
